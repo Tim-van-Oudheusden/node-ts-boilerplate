@@ -1,0 +1,15 @@
+# Ignore artifacts:
+build
+dist
+coverage
+
+# Ignore all HTML files:
+*.html
+
+.eslintrc
+.gitignore
+.gitattributes
+.prettierignore
+
+renovate.json
+tsconfig.json

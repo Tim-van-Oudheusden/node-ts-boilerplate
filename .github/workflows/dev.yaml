@@ -1,0 +1,93 @@
+name: Deploy to dev
+
+env:
+  ECR_REPOSITORY: ${{ github.event.repository.name }}
+  ECS_SERVICE: ${{ github.event.repository.name }}
+  GITHUB_ACTIONS_ROLE_DEV: / # Roles should be split on AWS per secure & seperation implementation
+  GITHUB_ACTIONS_ROLE_SHARED_SERVICES: / # Roles hould be split on AWS per secure & seperation implementation
+  AWS_REGION: eu-central-1
+  ECR_REGISTRY: / # ecr registry url
+  ECS_CLUSTER: dev-Fargate # Using Fargate, can be changed
+
+on:
+  push:
+    branches: 
+      - main
+
+permissions: # permissions are required for AWS
+  id-token: write # This is required for requesting the JWT
+  contents: read  # This is required for actions/checkout
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [19.x]
+    name: Test using Node v${{matrix.node-version}}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Use Node.js ${{matrix.node-version}}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{matrix.node-version}}
+      - run: |
+          npm ci
+          npm run test
+        env:
+          CI: true
+  
+  build-artifacts:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Build artifacts
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ env.GITHUB_ACTIONS_ROLE_SHARED_SERVICES }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR Private
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        run: |
+          SHORT_COMMIT_SHA=$(git rev-parse --short ${{ github.sha }})
+          docker build -t image_build .
+          docker tag image_build $ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_COMMIT_SHA
+          docker tag image_build $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_COMMIT_SHA
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          # output image url for next steps # TODO EVALUATE if output IMAGE_URL this should stay in
+          echo "IMAGE_URL=$ECR_REGISTRY/$ECR_REPOSITORY:$SHORT_COMMIT_SHA" >>$GITHUB_OUTPUT
+          
+  deploy:
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ env.GITHUB_ACTIONS_ROLE_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: deploy
+        run: |
+          aws ecs update-service \
+          --cluster $ECS_CLUSTER \
+          --service $ECS_SERVICE \
+          --force-new-deployment \
+          --region $AWS_REGION
+      - name: wait for services to be stable
+        run: |
+          aws ecs wait services-stable \
+          --services $ECS_SERVICE \
+          --cluster $ECS_CLUSTER

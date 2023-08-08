@@ -1,0 +1,23 @@
+version: '3'
+
+networks:
+  app-tier:
+    driver: bridge
+
+services:
+  boilerplate-microservice-backend-nodejs:
+    build: .
+    container_name: boilerplate-microservice-backend-nodejs
+    ports:
+      - 8080:80
+    volumes:
+      - ./tmp/npm:/root/.npm:z
+      - ./src:/usr/code/src:z
+    environment:
+      - PORT=80
+      - NODE_ENV=development
+      - LOG_LEVEL=silly
+    restart: always
+    command: npm run start:dev
+volumes:
+  exclude:

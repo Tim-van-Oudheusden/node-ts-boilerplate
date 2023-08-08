@@ -1,0 +1,82 @@
+name: Deploy to prod
+
+env:
+
+  ECR_REPOSITORY: ${{ github.event.repository.name }}
+  ECS_SERVICE: ${{ github.event.repository.name }}
+  GITHUB_ACTIONS_ROLE_PROD: / # Roles should be split on AWS per secure & seperation implementation
+  GITHUB_ACTIONS_ROLE_SHARED_SERVICES: / # Roles hould be split on AWS per secure & seperation implementation
+  AWS_REGION: eu-central-1
+  ECS_CLUSTER: dev-Fargate # Using Fargate, can be changed
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_or_rollback:
+        type: choice
+        description: deploy or rollback?
+        options:
+        - deploy
+        - rollback
+      tags:
+        description: 'or, manually input tag to deploy: '
+        required: false
+
+permissions: # permissions are required for AWS
+  id-token: write # This is required for requesting the JWT
+  contents: read  # This is required for actions/checkout
+
+jobs:
+  update-image-tags:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ env.GITHUB_ACTIONS_ROLE_SHARED_SERVICES }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR Private
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      # add tag 'prod' and 'prod_timestamp' to image with tag 'test'
+      - name: move 'prod' tag to another image
+        id: update-tags
+        run: |
+          if [[ "${{ github.event.inputs.tags }}" != "" ]]; then
+            DEPLOY_BASED_ON_IMAGE_TAG=${{ github.event.inputs.tags }}
+          elif [[ "${{ github.event.inputs.deploy_or_rollback }}" == "deploy" ]]; then
+            DEPLOY_BASED_ON_IMAGE_TAG=test
+          elif [[ "${{ github.event.inputs.deploy_or_rollback }}" == "rollback" ]]; then
+            DEPLOY_BASED_ON_IMAGE_TAG=$(aws ecr describe-images \
+            --repository-name $ECR_REPOSITORY \
+            --query "sort_by(imageDetails,& imagePushedAt)[ * ].imageTags[ * ]" \
+            --output text | tr '\t' '\n' | grep "prod_" | sort -r| sed -n '2p')
+          fi
+          TIMESTAMP=$(date -u +%Y.%m.%d_%H.%M.%S)
+          MANIFEST=$(aws ecr batch-get-image --repository-name $ECR_REPOSITORY --image-ids imageTag=$DEPLOY_BASED_ON_IMAGE_TAG --query 'images[].imageManifest' --output text)
+          aws ecr put-image --repository-name $ECR_REPOSITORY --image-tag "prod" --image-manifest "$MANIFEST"
+          aws ecr put-image --repository-name $ECR_REPOSITORY --image-tag "prod_$TIMESTAMP" --image-manifest "$MANIFEST"
+  deploy:
+    needs: update-image-tags
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ env.GITHUB_ACTIONS_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: deploy
+        run: |
+          aws ecs update-service \
+          --cluster $ECS_CLUSTER \
+          --service $ECS_SERVICE \
+          --force-new-deployment \
+          --region $AWS_REGION
+      - name: wait for services to be stable
+        run: |
+          aws ecs wait services-stable \
+          --services $ECS_SERVICE \
+          --cluster $ECS_CLUSTER
