@@ -12,7 +12,7 @@
     "clean": "rm -rf ./build && rm tsconfig.tsbuildinfo",
     "test": "npm run build && jest --runInBand --detectOpenHandles --forceExit",
     "start:dev": "nodemon --legacy-watch",
-    "start:local": "npm run lint && cross-env NODE_ENV=development PORT=8080 MONGODB_URL=mongodb://localhost:27017 MONGODB_DATABASE=debitroom LOG_LEVEL=silly nodemon index.js",
+    "start:local": "npm run lint && cross-env NODE_ENV=development PORT=8080 MONGODB_URL=mongodb://localhost:27017 MONGODB_DATABASE=database LOG_LEVEL=silly nodemon index.js",
     "build:local": "npm run lint && tsc",
     "test:local": "npm run build:local && jest --coverage --runInBand --detectOpenHandles --forceExit && http-server coverage/ -o index.html",
     "setup-local-windows": "husky install",
@@ -24,15 +24,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/debitroom-software/boilerplate-microservice-backend-nodejs.git"
+    "url": "git+https://github.com/Tim-van-Oudheusden/node-ts-boilerplate.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/debitroom-software/boilerplate-microservice-backend-nodejs/issues"
+    "url": "https://github.com/Tim-van-Oudheusden/node-ts-boilerplate/issues"
   },
-  "homepage": "https://github.com/debitroom-software/boilerplate-microservice-backend-nodejs#readme",
+  "homepage": "https://github.com/Tim-van-Oudheusden/node-ts-boilerplate#readme",
   "devDependencies": {
     "@types/jest": "29.5.2",
     "@types/supertest": "2.0.12",
